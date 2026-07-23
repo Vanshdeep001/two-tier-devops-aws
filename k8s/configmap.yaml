@@ -11,7 +11,7 @@ metadata:
   namespace: two-tier
 data:
   # Consumed by the backend container.
-  MESSAGE: "Hello from Kubernetes (backend via ConfigMap)!"
+  MESSAGE: "Shipped by CI/CD — built, pushed to ECR & deployed to Kubernetes automatically!"
   CORS_ORIGIN: "*"
   PORT: "5000"
   # Consumed by the frontend/Nginx container: where to proxy /api.
