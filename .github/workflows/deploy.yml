@@ -41,14 +41,16 @@ jobs:
 
       - name: Install & test backend
         working-directory: backend
+        # npm install (not npm ci) so tiny lockfile-resolution differences
+        # between local and CI npm versions don't fail the build.
         run: |
-          npm ci
+          npm install --no-audit --no-fund
           npm test
 
       - name: Install & test frontend
         working-directory: frontend
         run: |
-          npm ci
+          npm install --no-audit --no-fund
           npm test
 
   # ==========================================================================

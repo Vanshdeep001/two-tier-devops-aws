@@ -11,7 +11,8 @@ WORKDIR /app
 
 # Copy manifests first so Docker caches the npm install layer.
 COPY package*.json ./
-RUN npm ci
+# npm install (not npm ci) to tolerate minor lockfile-resolution differences.
+RUN npm install --no-audit --no-fund
 
 # Copy the rest of the source and build the production bundle.
 COPY . .

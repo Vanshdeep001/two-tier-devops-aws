@@ -16,9 +16,9 @@ WORKDIR /app
 # files don't change, Docker reuses the cached "npm install" layer on rebuilds.
 COPY package*.json ./
 
-# npm ci = clean, reproducible install from package-lock.json.
-# --omit=dev skips devDependencies (jest/supertest) since we don't test here.
-RUN npm ci --omit=dev
+# npm install with --omit=dev skips devDependencies (jest/supertest).
+# Using install (not ci) tolerates minor lockfile-resolution differences.
+RUN npm install --omit=dev --no-audit --no-fund
 
 # ---------- Stage 2: runtime ----------
 FROM node:18-alpine AS runtime
