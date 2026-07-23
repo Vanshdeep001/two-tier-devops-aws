@@ -177,6 +177,6 @@ jobs:
 
             # VERIFY: wait for the rollouts to finish. If a rollout is stuck the
             # command fails, which fails the job -> you know the deploy is bad.
-            sudo k3s kubectl -n two-tier rollout status deployment/backend  --timeout=120s
-            sudo k3s kubectl -n two-tier rollout status deployment/frontend --timeout=120s
+            sudo k3s kubectl -n two-tier rollout status deployment/backend  --timeout=300s
+            sudo k3s kubectl -n two-tier rollout status deployment/frontend --timeout=300s
             sudo k3s kubectl -n two-tier get pods -o wide

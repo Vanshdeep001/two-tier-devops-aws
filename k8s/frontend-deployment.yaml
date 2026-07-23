@@ -43,13 +43,16 @@ spec:
                 configMapKeyRef: { name: app-config, key: BACKEND_URL }
 
           # Probes hit the lightweight /healthz endpoint defined in nginx.conf.
+          # Generous initialDelay + failureThreshold so pods aren't restarted
+          # while the 1 GB node is busy pulling images at first boot.
           livenessProbe:
             httpGet: { path: /healthz, port: 80 }
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
           readinessProbe:
             httpGet: { path: /healthz, port: 80 }
-            initialDelaySeconds: 3
+            initialDelaySeconds: 5
             periodSeconds: 10
 
           resources:
