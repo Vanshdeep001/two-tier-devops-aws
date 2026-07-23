@@ -1,0 +1,11 @@
+# namespace.yaml
+# A Namespace is a virtual folder inside the cluster. Putting all our objects in
+# one namespace keeps them grouped, makes cleanup easy (delete the namespace =
+# delete everything in it), and avoids name clashes with other apps.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: two-tier
+  labels:
+    app.kubernetes.io/part-of: two-tier-demo

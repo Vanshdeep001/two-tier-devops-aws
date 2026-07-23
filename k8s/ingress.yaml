@@ -1,0 +1,43 @@
+# ingress.yaml
+# An Ingress is an HTTP router at the edge of the cluster: it maps hostnames/paths
+# to Services, so you can serve everything on port 80/443 with clean URLs instead
+# of NodePorts. It needs an "ingress controller" running in the cluster to work.
+#
+# GOOD NEWS for this project: k3s ships with the Traefik ingress controller
+# built in, so this Ingress works out of the box on our Free-Tier node — no
+# paid AWS load balancer required.
+#
+# Routing here:
+#   /        -> frontend-service  (the React app)
+#   /api     -> backend-service   (direct API access, optional)
+#
+# This is an ALTERNATIVE to using the NodePort. With Ingress you reach the app at
+# http://<node-public-ip>/  (plain port 80). Apply this OR rely on the NodePort;
+# both are provided so you can compare them.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: two-tier
+  annotations:
+    # Tell Traefik to use its standard entrypoint.
+    kubernetes.io/ingress.class: "traefik"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 5000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80

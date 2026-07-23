@@ -1,0 +1,14 @@
+# .dockerignore
+# Files/folders listed here are NOT sent to the Docker build. This makes builds
+# faster (less to copy) and avoids baking local junk or secrets into the image.
+
+node_modules       # will be reinstalled cleanly inside the image
+npm-debug.log
+.env               # never bake local secrets into an image
+.git
+.gitignore
+tests              # tests run in CI, not needed in the runtime image
+Dockerfile
+.dockerignore
+README.md
+coverage

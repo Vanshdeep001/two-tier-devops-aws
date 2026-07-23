@@ -1,0 +1,39 @@
+/* src/App.css — styles scoped (by convention) to the App component. */
+
+.container {
+  max-width: 640px;
+  margin: 60px auto;
+  padding: 32px;
+  text-align: center;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  color: #2c3e50;
+}
+
+.message {
+  font-size: 1.25rem;
+  color: #16a085;
+  font-weight: 600;
+}
+
+.info {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f4f6f7;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.error {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+footer {
+  margin-top: 32px;
+  font-size: 0.85rem;
+  color: #7f8c8d;
+}

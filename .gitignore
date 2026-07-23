@@ -1,0 +1,27 @@
+# .gitignore — files that must NEVER be committed.
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+coverage/
+frontend/build/
+.env
+.env.local
+.env.*.local
+
+# --- Terraform ---
+# State can contain secrets and real resource IDs — never commit it.
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+# Personal variable values (your IP, etc.).
+terraform/terraform.tfvars
+# The generated SSH private key.
+terraform/*.pem
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

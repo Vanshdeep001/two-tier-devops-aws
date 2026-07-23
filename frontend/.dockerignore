@@ -1,0 +1,13 @@
+# frontend/.dockerignore
+# Keep these out of the Docker build context (faster builds, no local junk).
+
+node_modules     # reinstalled cleanly inside the image
+build            # rebuilt inside the image
+.env
+.env.local
+.git
+.gitignore
+README.md
+coverage
+Dockerfile
+.dockerignore

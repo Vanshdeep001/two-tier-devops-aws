@@ -1,0 +1,61 @@
+# frontend-deployment.yaml
+# Deployment for the React+Nginx frontend pods. Same pattern as the backend:
+# desired replicas, rolling updates, probes, and resource limits.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: two-tier
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # Pull the private ECR image using the CI-created "ecr-cred" secret.
+      imagePullSecrets:
+        - name: ecr-cred
+      containers:
+        - name: frontend
+          # CI replaces this with the real ECR image + Git SHA tag.
+          image: REPLACE_WITH_FRONTEND_IMAGE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+
+          # Nginx needs to know where to proxy /api. We feed it BACKEND_URL from
+          # the ConfigMap; the container's envsubst step rewrites nginx.conf.
+          env:
+            - name: BACKEND_URL
+              valueFrom:
+                configMapKeyRef: { name: app-config, key: BACKEND_URL }
+
+          # Probes hit the lightweight /healthz endpoint defined in nginx.conf.
+          livenessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "96Mi"

@@ -1,0 +1,22 @@
+# backend-service.yaml
+# A Service gives a stable DNS name + virtual IP for a changing set of pods.
+# Pods come and go (and get new IPs); the Service stays put and load-balances
+# across whichever pods currently match its selector.
+#
+# type: ClusterIP (the default) = reachable ONLY inside the cluster. That's what
+# we want for the backend: the frontend (Nginx) talks to it internally, and it
+# is never exposed to the internet directly. This is more secure.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service # DNS name becomes: backend-service.two-tier.svc
+  namespace: two-tier
+spec:
+  type: ClusterIP
+  selector:
+    app: backend # routes to pods with label app=backend
+  ports:
+    - name: http
+      port: 5000       # the port the Service listens on
+      targetPort: 5000 # the container port to forward to

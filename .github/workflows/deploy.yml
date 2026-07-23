@@ -1,0 +1,171 @@
+# .github/workflows/deploy.yml
+# The CI/CD pipeline. On every push to main it:
+#   1) tests both apps, 2) builds + pushes Docker images to ECR tagged with the
+#   Git SHA, 3) deploys the new images to the k3s node over SSH.
+# Jobs run in order because each `needs:` the previous one.
+
+name: CI-CD
+
+# --- WHEN does this run? ----------------------------------------------------
+on:
+  push:
+    branches: [main]        # deploy only from main
+  workflow_dispatch: {}      # also allow manual "Run workflow" button
+
+# Least-privilege token permissions for the whole workflow.
+permissions:
+  contents: read
+
+# Values reused across jobs. GITHUB_SHA is the commit hash; we use its short
+# form as the immutable image tag (never :latest).
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # ==========================================================================
+  # JOB 1: run tests. Fail fast before we build/push anything.
+  # ==========================================================================
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks out your repo code into the runner so later steps can see it.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Installs Node 18 and enables npm caching for faster installs.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install & test backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm test
+
+      - name: Install & test frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+
+  # ==========================================================================
+  # JOB 2: build both images and push them to Amazon ECR.
+  # ==========================================================================
+  build-and-push:
+    needs: test                 # only runs if tests passed
+    runs-on: ubuntu-latest
+    outputs:
+      # Expose the full image refs so the deploy job can use them.
+      backend_image: ${{ steps.refs.outputs.backend_image }}
+      frontend_image: ${{ steps.refs.outputs.frontend_image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Exchange the stored AWS keys for a configured AWS session on the runner.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Logs Docker in to your private ECR registry. Outputs the registry URL.
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Compute the full image references once and share them via outputs.
+      - name: Compute image refs
+        id: refs
+        run: |
+          REG=${{ steps.ecr.outputs.registry }}
+          echo "backend_image=$REG/two-tier-demo-backend:${IMAGE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$REG/two-tier-demo-frontend:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push backend image
+        run: |
+          docker build -t ${{ steps.refs.outputs.backend_image }} ./backend
+          docker push  ${{ steps.refs.outputs.backend_image }}
+
+      - name: Build & push frontend image
+        run: |
+          # Frontend uses a relative /api URL (Nginx proxies it), so no build arg
+          # is needed here.
+          docker build -t ${{ steps.refs.outputs.frontend_image }} ./frontend
+          docker push  ${{ steps.refs.outputs.frontend_image }}
+
+  # ==========================================================================
+  # JOB 3: deploy the new images to the k3s node over SSH.
+  # ==========================================================================
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Copy the k8s manifests to the node so we can apply them there.
+      - name: Copy manifests to node
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}       # usually "ubuntu"
+          key: ${{ secrets.EC2_SSH_KEY }}          # the private .pem contents
+          source: "k8s/*"
+          target: "/home/ubuntu/deploy"
+          overwrite: true
+
+      # SSH in, log the node in to ECR, patch the image tags into the manifests,
+      # and apply. The node's IAM role lets it pull the private images.
+      - name: Deploy to k3s
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /home/ubuntu/deploy/k8s
+
+            REGION=${{ secrets.AWS_REGION }}
+            # Registry host is the part of the image ref before the first "/".
+            REGISTRY=$(echo "${{ needs.build-and-push.outputs.backend_image }}" | cut -d/ -f1)
+
+            # Make sure the namespace exists before we put a pull-secret in it.
+            sudo k3s kubectl apply -f namespace.yaml
+
+            # Create/refresh a Kubernetes "docker-registry" secret holding a fresh
+            # ECR login token. The deployments reference it via imagePullSecrets so
+            # k3s can pull the PRIVATE images. ECR tokens last ~12h; we refresh it
+            # on every deploy. --dry-run|apply makes this idempotent.
+            sudo k3s kubectl -n two-tier create secret docker-registry ecr-cred \
+              --docker-server="$REGISTRY" \
+              --docker-username=AWS \
+              --docker-password="$(aws ecr get-login-password --region "$REGION")" \
+              --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+
+            # Replace the image placeholders with the exact SHA-tagged images.
+            sed -i "s#REPLACE_WITH_BACKEND_IMAGE#${{ needs.build-and-push.outputs.backend_image }}#g" backend-deployment.yaml
+            sed -i "s#REPLACE_WITH_FRONTEND_IMAGE#${{ needs.build-and-push.outputs.frontend_image }}#g" frontend-deployment.yaml
+
+            # Apply everything (namespace already applied above).
+            sudo k3s kubectl apply -f configmap.yaml
+            sudo k3s kubectl apply -f secret.yaml
+            sudo k3s kubectl apply -f backend-deployment.yaml
+            sudo k3s kubectl apply -f backend-service.yaml
+            sudo k3s kubectl apply -f frontend-deployment.yaml
+            sudo k3s kubectl apply -f frontend-service.yaml
+            sudo k3s kubectl apply -f ingress.yaml
+
+            # Stamp the running version with the Git SHA (shows in /api/info).
+            sudo k3s kubectl -n two-tier set env deployment/backend APP_VERSION=${{ github.sha }}
+
+            # VERIFY: wait for the rollouts to finish. If a rollout is stuck the
+            # command fails, which fails the job -> you know the deploy is bad.
+            sudo k3s kubectl -n two-tier rollout status deployment/backend  --timeout=120s
+            sudo k3s kubectl -n two-tier rollout status deployment/frontend --timeout=120s
+            sudo k3s kubectl -n two-tier get pods -o wide

@@ -1,0 +1,88 @@
+# backend-deployment.yaml
+# A Deployment describes the DESIRED state for a set of identical pods and keeps
+# reality matching it. It creates a ReplicaSet, which in turn creates the Pods.
+# If a pod dies, the ReplicaSet makes a new one. If you change the image, the
+# Deployment performs a controlled ROLLING UPDATE.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: two-tier
+  labels:
+    app: backend
+spec:
+  # How many identical pods to run. 2 = survives one pod dying, and load
+  # balances across replicas.
+  replicas: 2
+
+  # The Deployment manages pods whose labels match this selector.
+  selector:
+    matchLabels:
+      app: backend
+
+  # Rolling update: replace pods gradually so there's no downtime.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # never drop below desired count during the update
+      maxSurge: 1       # may create 1 extra pod at a time while rolling
+
+  # The pod template — the blueprint for each pod the ReplicaSet creates.
+  template:
+    metadata:
+      labels:
+        app: backend # MUST match spec.selector.matchLabels above
+    spec:
+      # Credentials to pull the PRIVATE image from ECR. The CI pipeline creates
+      # this "ecr-cred" secret (a fresh ECR login token) before deploying.
+      imagePullSecrets:
+        - name: ecr-cred
+      containers:
+        - name: backend
+          # CI replaces this exact string with the real ECR image + Git SHA tag.
+          # We avoid ":latest" so every deploy is a specific, traceable version.
+          image: REPLACE_WITH_BACKEND_IMAGE
+          # IfNotPresent = use the local cached image if the tag already exists.
+          # Because we use unique SHA tags, this is safe and avoids re-pulling.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+
+          # Inject config from the ConfigMap as environment variables.
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef: { name: app-config, key: PORT }
+            - name: MESSAGE
+              valueFrom:
+                configMapKeyRef: { name: app-config, key: MESSAGE }
+            - name: CORS_ORIGIN
+              valueFrom:
+                configMapKeyRef: { name: app-config, key: CORS_ORIGIN }
+            # APP_VERSION is set to the image tag by CI (via kubectl set env),
+            # or defaults inside the app.
+
+          # Liveness probe: if /health fails repeatedly, restart the container.
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 10 # give the app time to boot first
+            periodSeconds: 10       # check every 10s
+
+          # Readiness probe: only send traffic once /ready returns 200.
+          readinessProbe:
+            httpGet: { path: /ready, port: 5000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          # Resource requests/limits.
+          # requests = guaranteed reservation used for scheduling.
+          # limits   = hard cap; exceeding memory limit gets the container killed.
+          # Kept tiny so two pods fit on a t3.micro (1 GB RAM).
+          resources:
+            requests:
+              cpu: "50m"      # 0.05 vCPU
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
