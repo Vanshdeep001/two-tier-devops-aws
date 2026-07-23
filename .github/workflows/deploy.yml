@@ -134,8 +134,17 @@ jobs:
             cd /home/ubuntu/deploy/k8s
 
             REGION=${{ secrets.AWS_REGION }}
-            # Registry host is the part of the image ref before the first "/".
-            REGISTRY=$(echo "${{ needs.build-and-push.outputs.backend_image }}" | cut -d/ -f1)
+            TAG=${{ github.sha }}
+
+            # The ECR registry host contains the AWS account ID, which GitHub
+            # masks as a secret. Masked values come through EMPTY when passed
+            # between jobs, so we DON'T pass the image ref from build-and-push.
+            # Instead the node looks up its own account ID (its IAM role lets it
+            # call sts) and rebuilds the exact same image refs locally.
+            ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="$ACCOUNT.dkr.ecr.$REGION.amazonaws.com"
+            BACKEND_IMAGE="$REGISTRY/two-tier-demo-backend:$TAG"
+            FRONTEND_IMAGE="$REGISTRY/two-tier-demo-frontend:$TAG"
 
             # Make sure the namespace exists before we put a pull-secret in it.
             sudo k3s kubectl apply -f namespace.yaml
@@ -151,8 +160,8 @@ jobs:
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
             # Replace the image placeholders with the exact SHA-tagged images.
-            sed -i "s#REPLACE_WITH_BACKEND_IMAGE#${{ needs.build-and-push.outputs.backend_image }}#g" backend-deployment.yaml
-            sed -i "s#REPLACE_WITH_FRONTEND_IMAGE#${{ needs.build-and-push.outputs.frontend_image }}#g" frontend-deployment.yaml
+            sed -i "s#REPLACE_WITH_BACKEND_IMAGE#$BACKEND_IMAGE#g" backend-deployment.yaml
+            sed -i "s#REPLACE_WITH_FRONTEND_IMAGE#$FRONTEND_IMAGE#g" frontend-deployment.yaml
 
             # Apply everything (namespace already applied above).
             sudo k3s kubectl apply -f configmap.yaml
